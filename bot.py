@@ -5,42 +5,39 @@ import pandas as pd
 from datetime import datetime, timezone
 
 # ─── CONFIG ───────────────────────────────────────────────
-TELEGRAM_TOKEN = "8542688230:AAGnkw00lubZyzLiBHAPWlJsTk41la61n8"
-CHAT_ID        = "5096041910"
+TELEGRAM_TOKEN = "TON_TOKEN_ICI"
+CHAT_ID        = "TON_CHAT_ID_ICI"
 
-CHECK_EVERY    = 60 * 5   # 5 min (scalping propre XAU 15m)
-STATUS_EVERY   = 60 * 60 * 4
+CHECK_EVERY = 60 * 5  # 5 min scalping
 
 # ─── LOGGING ─────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger()
 
-# ─── TELEGRAM ────────────────────────────────────────────
+# ─── TELEGRAM (DEBUG OK) ─────────────────────────────────
 def send_message(text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    url = f"https://api.telegram.org/bot8542688230:AAGnkw00lubZyzLiBHAPwLhJsTk41la61n8/sendMessage"
     payload = {
-        "chat_id": CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown"
+        "chat_id": 8531096212,
+        "text": text
     }
+
     try:
-        requests.post(url, json=payload, timeout=10)
+        r = requests.post(url, json=payload, timeout=10)
+        log.info(f"Telegram response: {r.status_code} | {r.text}")
     except Exception as e:
         log.error(f"Telegram error: {e}")
 
 # ─── DATA ────────────────────────────────────────────────
-def get_ohlcv(interval="15m", range_="5d"):
+def get_ohlcv():
     url = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
-    params = {"interval": interval, "range": range_}
+    params = {"interval": "15m", "range": "5d"}
     headers = {"User-Agent": "Mozilla/5.0"}
 
     r = requests.get(url, params=params, headers=headers, timeout=15)
     r.raise_for_status()
-    data = r.json()["chart"]["result"][0]
 
+    data = r.json()["chart"]["result"][0]
     ohlcv = data["indicators"]["quote"][0]
 
     df = pd.DataFrame({
@@ -54,29 +51,16 @@ def get_ohlcv(interval="15m", range_="5d"):
 
     return df
 
-# ─── INDICATORS (SCALP LIGHT) ───────────────────────────
+# ─── INDICATORS LIGHT SCALPING ───────────────────────────
 def compute_indicators(df):
     close = df["close"]
     high = df["high"]
     low = df["low"]
 
-    # EMA
-    df["ema9"]  = close.ewm(span=9).mean()
+    df["ema9"] = close.ewm(span=9).mean()
     df["ema21"] = close.ewm(span=21).mean()
-    df["ema50"] = close.ewm(span=50).mean()
+    df["rsi"] = compute_rsi(close)
 
-    # RSI
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.ewm(alpha=1/14).mean()
-    avg_loss = loss.ewm(alpha=1/14).mean()
-
-    rs = avg_gain / (avg_loss + 1e-10)
-    df["rsi"] = 100 - (100 / (1 + rs))
-
-    # ATR
     tr = pd.concat([
         high - low,
         abs(high - close.shift()),
@@ -87,7 +71,19 @@ def compute_indicators(df):
 
     return df
 
-# ─── SUPPORT / RESISTANCE SIMPLE ─────────────────────────
+# ─── RSI ────────────────────────────────────────────────
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.ewm(alpha=1/period).mean()
+    avg_loss = loss.ewm(alpha=1/period).mean()
+
+    rs = avg_gain / (avg_loss + 1e-10)
+    return 100 - (100 / (1 + rs))
+
+# ─── SUPPORT / RESISTANCE ───────────────────────────────
 def get_sr(df):
     support = df["low"].rolling(20).min().iloc[-1]
     resistance = df["high"].rolling(20).max().iloc[-1]
@@ -96,57 +92,50 @@ def get_sr(df):
 # ─── SIGNAL SCALPING ─────────────────────────────────────
 def get_signal(df):
     last = df.iloc[-1]
-    price = last["close"]
 
+    price = last["close"]
     ema9 = last["ema9"]
     ema21 = last["ema21"]
-    ema50 = last["ema50"]
     rsi = last["rsi"]
     atr = last["atr"]
 
     support, resistance = get_sr(df)
 
-    score_buy = 0
-    score_sell = 0
+    buy = 0
+    sell = 0
     reasons = []
 
-    # ── TREND ──
+    # TREND
     if ema9 > ema21:
-        score_buy += 1
-        reasons.append("Trend court haussier")
+        buy += 1
+        reasons.append("Trend haussier EMA")
     else:
-        score_sell += 1
-        reasons.append("Trend court baissier")
+        sell += 1
+        reasons.append("Trend baissier EMA")
 
-    # ── RSI MOMENTUM ──
+    # RSI
     if rsi > 55:
-        score_buy += 1
-        reasons.append(f"RSI bullish ({rsi:.1f})")
+        buy += 1
+        reasons.append(f"RSI bullish {rsi:.1f}")
     elif rsi < 45:
-        score_sell += 1
-        reasons.append(f"RSI bearish ({rsi:.1f})")
+        sell += 1
+        reasons.append(f"RSI bearish {rsi:.1f}")
 
-    # ── TREND CONFIRMATION ──
-    if ema21 > ema50:
-        score_buy += 1
-    else:
-        score_sell += 1
-
-    # ── SUPPORT / RESISTANCE ──
+    # ZONES
     if price <= support * 1.002:
-        score_buy += 1
+        buy += 1
         reasons.append("Support zone")
     if price >= resistance * 0.998:
-        score_sell += 1
+        sell += 1
         reasons.append("Resistance zone")
 
-    # ── DECISION ──
-    if score_buy >= 2:
+    # DECISION
+    if buy >= 2:
         sl = round(price - atr * 1.2, 2)
         tp = round(price + atr * 1.8, 2)
         return "BUY", price, sl, tp, 75, reasons, support, resistance
 
-    if score_sell >= 2:
+    if sell >= 2:
         sl = round(price + atr * 1.2, 2)
         tp = round(price - atr * 1.8, 2)
         return "SELL", price, sl, tp, 75, reasons, support, resistance
@@ -154,38 +143,34 @@ def get_signal(df):
     return "NEUTRE", price, None, None, 50, [], support, resistance
 
 # ─── FORMAT MESSAGE ──────────────────────────────────────
-def format_msg(signal, price, sl, tp, confidence, reasons, support, resistance):
+def format_msg(signal, price, sl, tp, conf, reasons, support, resistance):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     if signal == "NEUTRE":
         return (
-            f"🔍 *XAU/USD SCALP*\n"
-            f"🕐 {now}\n"
-            f"💰 {price:.2f}\n"
-            f"📍 Support {support} | Resistance {resistance}\n"
-            f"⏳ Pas de setup clair"
+            f"🔍 XAU/USD SCALP\n"
+            f"{now}\n"
+            f"Price: {price:.2f}\n"
+            f"Support: {support} | Resistance: {resistance}\n"
+            f"No clear setup"
         )
 
     emoji = "🟢" if signal == "BUY" else "🔴"
 
     return (
-        f"{emoji} *{signal} XAU/USD SCALP*\n"
-        f"🕐 {now}\n\n"
-        f"💰 Entry: `{price:.2f}`\n"
-        f"🛑 SL: `{sl}`\n"
-        f"🎯 TP: `{tp}`\n"
-        f"📊 Confidence: {confidence}%\n\n"
-        f"📍 Support: {support} | Resistance: {resistance}\n\n"
-        f"✔️ Reasons:\n" + "\n".join(reasons[:4])
+        f"{emoji} {signal} XAU/USD SCALP\n"
+        f"{now}\n\n"
+        f"Entry: {price:.2f}\n"
+        f"SL: {sl}\n"
+        f"TP: {tp}\n"
+        f"Confidence: {conf}%\n\n"
+        f"Reasons:\n" + "\n".join(reasons[:4])
     )
 
 # ─── MAIN LOOP ───────────────────────────────────────────
 def main():
-    log.info("SCALP BOT XAU/USD STARTED")
-    send_message("🚀 *Scalp Bot XAU/USD activé*")
-
-    last_signal = None
-    last_status = time.time()
+    log.info("SCALP BOT STARTED")
+    send_message("🚀 Scalping bot XAU/USD ONLINE")
 
     while True:
         try:
@@ -196,22 +181,14 @@ def main():
 
             log.info(f"{signal} | {price:.2f} | {conf}%")
 
-            if signal != "NEUTRE" and signal != last_signal:
+            # 🔥 IMPORTANT: ENVOI SANS BLOQUAGE
+            if signal != "NEUTRE":
                 msg = format_msg(signal, price, sl, tp, conf, reasons, support, resistance)
                 send_message(msg)
-                last_signal = signal
-
-            if signal == "NEUTRE":
-                last_signal = None
-
-            if time.time() - last_status > STATUS_EVERY:
-                send_message(f"🤖 Bot actif | Prix {price:.2f}")
-                last_status = time.time()
 
         except Exception as e:
             log.error(e)
-            send_message(f"⚠️ Error: {e}")
-            last_signal = None
+            send_message(f"Error: {e}")
 
         time.sleep(CHECK_EVERY)
 
