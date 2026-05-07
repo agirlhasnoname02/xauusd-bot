@@ -7,8 +7,8 @@ import numpy as np
 from datetime import datetime, timezone
 
 # ─── CONFIG ───────────────────────────────────────────────
-TELEGRAM_TOKEN = os.environ.get"8531096212:AAEx3gEzf-oJFyhN1eMQMlE0U2x9VyhrZc"
-CHAT_ID        = os.environ.get"5096041910"
+TELEGRAM_TOKEN = "8531096212:AAEx3gEzf-oJFyhN1eMQMlE0U2x9VyhrZc"
+CHAT_ID        = "5096041910"
 CHECK_EVERY    = 60 * 15          # toutes les 15 min
 HTF_REFRESH    = 60 * 60          # refresh tendance HTF toutes les 1h
 STATUS_EVERY   = 60 * 60 * 4     # rapport de statut toutes les 4h
