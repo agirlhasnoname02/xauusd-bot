@@ -4,41 +4,44 @@ import requests
 import pandas as pd
 from datetime import datetime, timezone
 
-# ─── CONFIG ───────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# CONFIG (À REMPLACER)
+# ─────────────────────────────────────────────
 TELEGRAM_TOKEN = "8542688230:AAGnkw00lubZyzLiBHAPwLhJsTk41la61n8"
 CHAT_ID = "8531096212"
 
-CHECK_EVERY = 60 * 5  # 5 min
+CHECK_EVERY = 60 * 5  # 5 minutes
 
-# ─── LOGGING ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# LOGGING
+# ─────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger()
 
-# ─── TELEGRAM ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# TELEGRAM
+# ─────────────────────────────────────────────
 def send_message(text):
-    url = f"https://api.telegram.org/bot8542688230:AAGnkw00lubZyzLiBHAPwLhJsTk41la61n8/sendMessage"
+    if not text or str(text).strip() == "":
+        log.warning("Message vide ignoré")
+        return
 
-    payload = {
-        "chat_id": CHAT_ID,"8531096212"
-        "text": text
-    }
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
     try:
-        r = requests.post(url, json=payload, timeout=10)
+        r = requests.post(url, json={
+            "chat_id": CHAT_ID,
+            "text": text
+        }, timeout=10)
+
         log.info(f"Telegram: {r.status_code} | {r.text}")
-        return r.json()
 
     except Exception as e:
         log.error(f"Telegram error: {e}")
-        return None
-import requests
 
-TOKEN = "8542688230:AAGnkw00lubZyzLiBHAPwLhJsTk41la61n8"
-url = f"https://api.telegram.org/bot8542688230:AAGnkw00lubZyzLiBHAPwLhJsTk41la61n8/getMe"
-
-print(requests.get(url).text)
-
-# ─── DATA ────────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# DATA (GOLD - Yahoo Finance)
+# ─────────────────────────────────────────────
 def get_ohlcv():
     url = "https://query1.finance.yahoo.com/v8/finance/chart/GC=F"
     params = {"interval": "15m", "range": "5d"}
@@ -57,12 +60,13 @@ def get_ohlcv():
         "low": ohlcv["low"],
         "close": ohlcv["close"],
         "volume": ohlcv["volume"]
-    }).dropna()
+    })
 
-    return df
+    return df.dropna()
 
-
-# ─── INDICATORS ───────────────────────────────────────────
+# ─────────────────────────────────────────────
+# RSI
+# ─────────────────────────────────────────────
 def compute_rsi(series, period=14):
     delta = series.diff()
 
@@ -75,7 +79,9 @@ def compute_rsi(series, period=14):
     rs = avg_gain / (avg_loss + 1e-10)
     return 100 - (100 / (1 + rs))
 
-
+# ─────────────────────────────────────────────
+# INDICATORS
+# ─────────────────────────────────────────────
 def compute_indicators(df):
     close = df["close"]
     high = df["high"]
@@ -95,15 +101,17 @@ def compute_indicators(df):
 
     return df
 
-
-# ─── SUPPORT / RESISTANCE ────────────────────────────────
+# ─────────────────────────────────────────────
+# SUPPORT / RESISTANCE
+# ─────────────────────────────────────────────
 def get_sr(df):
     support = df["low"].rolling(20).min().iloc[-1]
     resistance = df["high"].rolling(20).max().iloc[-1]
     return round(support, 2), round(resistance, 2)
 
-
-# ─── SIGNAL ENGINE ────────────────────────────────────────
+# ─────────────────────────────────────────────
+# SIGNAL ENGINE
+# ─────────────────────────────────────────────
 def get_signal(df):
     last = df.iloc[-1]
 
@@ -115,6 +123,10 @@ def get_signal(df):
 
     support, resistance = get_sr(df)
 
+    # protection NaN
+    if pd.isna(price) or pd.isna(ema9) or pd.isna(ema21) or pd.isna(rsi) or pd.isna(atr):
+        return "NEUTRAL", price, None, None, 50, [], support, resistance
+
     buy = 0
     sell = 0
     reasons = []
@@ -122,10 +134,10 @@ def get_signal(df):
     # TREND
     if ema9 > ema21:
         buy += 1
-        reasons.append("EMA trend bullish")
+        reasons.append("EMA bullish")
     else:
         sell += 1
-        reasons.append("EMA trend bearish")
+        reasons.append("EMA bearish")
 
     # RSI
     if rsi > 55:
@@ -139,6 +151,7 @@ def get_signal(df):
     if price <= support * 1.002:
         buy += 1
         reasons.append("Support zone")
+
     if price >= resistance * 0.998:
         sell += 1
         reasons.append("Resistance zone")
@@ -156,8 +169,9 @@ def get_signal(df):
 
     return "NEUTRAL", price, None, None, 50, [], support, resistance
 
-
-# ─── MESSAGE FORMAT ───────────────────────────────────────
+# ─────────────────────────────────────────────
+# FORMAT MESSAGE
+# ─────────────────────────────────────────────
 def format_msg(signal, price, sl, tp, conf, reasons, support, resistance):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
@@ -167,7 +181,7 @@ def format_msg(signal, price, sl, tp, conf, reasons, support, resistance):
             f"{now}\n"
             f"Price: {price:.2f}\n"
             f"Support: {support} | Resistance: {resistance}\n"
-            f"No clear setup"
+            f"No setup"
         )
 
     emoji = "🟢" if signal == "BUY" else "🔴"
@@ -182,11 +196,12 @@ def format_msg(signal, price, sl, tp, conf, reasons, support, resistance):
         f"Reasons:\n" + "\n".join(reasons[:4])
     )
 
-
-# ─── MAIN LOOP ───────────────────────────────────────────
+# ─────────────────────────────────────────────
+# MAIN LOOP
+# ─────────────────────────────────────────────
 def main():
     log.info("BOT STARTED")
-    send_message("🚀 XAU/USD bot ONLINE")
+    send_message("🚀 XAU/USD BOT ONLINE")
 
     while True:
         try:
@@ -195,7 +210,7 @@ def main():
 
             signal, price, sl, tp, conf, reasons, support, resistance = get_signal(df)
 
-            log.info(f"{signal} | {price:.2f} | {conf}%")
+            log.info(f"{signal} | {price} | {conf}%")
 
             if signal != "NEUTRAL":
                 msg = format_msg(signal, price, sl, tp, conf, reasons, support, resistance)
@@ -203,10 +218,9 @@ def main():
 
         except Exception as e:
             log.error(e)
-            send_message(f"ERROR: {e}")
+            send_message(f"BOT ERROR: {e}")
 
         time.sleep(CHECK_EVERY)
-
 
 if __name__ == "__main__":
     main()
