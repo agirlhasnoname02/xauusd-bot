@@ -31,7 +31,12 @@ def send_message(text):
     except Exception as e:
         log.error(f"Telegram error: {e}")
         return None
+import requests
 
+TOKEN = "8542688230:AAGnkw00lubZyzLiBHAPwLhJsTk41la61n8"
+url = f"https://api.telegram.org/bot8542688230:AAGnkw00lubZyzLiBHAPwLhJsTk41la61n8/getMe"
+
+print(requests.get(url).text)
 
 # ─── DATA ────────────────────────────────────────────────
 def get_ohlcv():
