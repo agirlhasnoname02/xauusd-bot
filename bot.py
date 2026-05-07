@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 # CONFIG (À REMPLACER)
 # ─────────────────────────────────────────────
 TELEGRAM_TOKEN = "8542688230:AAGnkw00lubZyzLiBHAPwLhJsTk41la61n8"
-CHAT_ID = "8531096212"
+CHAT_ID = "8542688230"
 
 CHECK_EVERY = 60 * 5  # 5 minutes
 
