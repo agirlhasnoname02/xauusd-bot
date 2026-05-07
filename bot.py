@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger()
 
 # ─── TELEGRAM (DEBUG OK) ─────────────────────────────────
-def send_message(text):
+def send_message("🚀 TEST BOT OK - Telegram fonctionne"):
     url = f"https://api.telegram.org/bot8542688230:AAGnkw00lubZyzLiBHAPwLhJsTk41la61n8/sendMessage"
     payload = {
         "chat_id": 8531096212,
